@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-10 14:48:05.770954",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item_attach",
+  "item_groups_attach",
+  "warehouse_attach",
+  "master_data_1_upload"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_attach",
+   "fieldtype": "Attach",
+   "label": "Item Attach"
+  },
+  {
+   "fieldname": "item_groups_attach",
+   "fieldtype": "Attach",
+   "label": "item groups attach"
+  },
+  {
+   "fieldname": "warehouse_attach",
+   "fieldtype": "Attach",
+   "label": "warehouse attach"
+  },
+  {
+   "fieldname": "master_data_1_upload",
+   "fieldtype": "Button",
+   "label": "Master data 1 upload"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-10 15:01:11.136850",
+ "modified_by": "Administrator",
+ "module": "Stock And Buying",
+ "name": "Stock Testing - developers",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
