@@ -48,6 +48,8 @@ frappe.ui.form.on("Stock Testing - developers", {
 						}
 
 						let msg = "";
+						msg += section("Companies", d.companies);
+						msg += section("Asset Categories", d.asset_categories);
 						msg += section("Item Groups", d.item_groups);
 						msg += section("Warehouses", d.warehouses);
 						msg += section("Items", d.items);

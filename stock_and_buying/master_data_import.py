@@ -11,6 +11,14 @@ COMPANY_NAME_MAP = {
 	"TAJDEED VEHICLE TESTING CENTER": "Tajdeed Vehicle Testing Center L.L.C",
 }
 
+# Defaults used only to auto-create the 2 companies above if they don't exist yet.
+# chart_of_accounts is left unset so Company falls back to the "Standard" template,
+# which includes the "Temporary Opening" account opening-stock reconciliations need.
+COMPANY_DEFAULTS = {
+	"Bin Yaber Driving Institute L.L.C": {"abbr": "BYDI", "default_currency": "AED", "country": "United Arab Emirates"},
+	"Tajdeed Vehicle Testing Center L.L.C": {"abbr": "T", "default_currency": "AED", "country": "United Arab Emirates"},
+}
+
 
 def _clean(value):
 	if value is None:
@@ -117,6 +125,8 @@ class MasterDataImporter:
 			wh_path = _resolve_file_path(self.warehouse_file)
 			it_path = _resolve_file_path(self.item_file)
 
+			result["companies"] = self.ensure_companies()
+			result["asset_categories"] = self.ensure_asset_category()
 			result["item_groups"] = self.import_item_groups(ig_path)
 			result["warehouses"] = self.import_warehouses(wh_path)
 
@@ -135,8 +145,107 @@ class MasterDataImporter:
 
 		return result
 
+	def ensure_companies(self):
+		"""Create the 2 companies used in COMPANY_NAME_MAP if they don't exist yet.
+		Skips (no-op) any company that already exists, so this is safe to re-run."""
+		created, skipped, errors = [], [], []
+
+		for company_name, defaults in COMPANY_DEFAULTS.items():
+			if frappe.db.exists("Company", company_name):
+				skipped.append(company_name)
+				continue
+			try:
+				doc = frappe.get_doc(
+					{
+						"doctype": "Company",
+						"company_name": company_name,
+						"abbr": defaults["abbr"],
+						"default_currency": defaults["default_currency"],
+						"country": defaults["country"],
+					}
+				)
+				doc.insert(ignore_permissions=True)
+				created.append(doc.name)
+			except Exception as e:
+				frappe.clear_messages()
+				errors.append(f"{company_name}: {e}")
+
+		return {"created": created, "skipped": skipped, "errors": errors}
+
+	def ensure_asset_category(self):
+		"""Create the "IT ASSET" Asset Category (used by the 6 Fixed Asset item rows)
+		if it doesn't exist yet, using each company's own Standard Chart of Accounts
+		defaults. Skips (no-op) if it already exists, so this is safe to re-run."""
+		created, skipped, errors = [], [], []
+		category_name = "IT ASSET"
+
+		if frappe.db.exists("Asset Category", category_name):
+			skipped.append(category_name)
+			return {"created": created, "skipped": skipped, "errors": errors}
+
+		try:
+			accounts = []
+			for company_name, defaults in COMPANY_DEFAULTS.items():
+				if not frappe.db.exists("Company", company_name):
+					errors.append(f"{category_name}: company '{company_name}' not found, skipped for that company")
+					continue
+
+				company_defaults = frappe.get_cached_value(
+					"Company",
+					company_name,
+					[
+						"accumulated_depreciation_account",
+						"depreciation_expense_account",
+						"capital_work_in_progress_account",
+					],
+					as_dict=True,
+				)
+				accounts.append(
+					{
+						"company_name": company_name,
+						"fixed_asset_account": f"Electronic Equipments - {defaults['abbr']}",
+						"accumulated_depreciation_account": company_defaults.accumulated_depreciation_account,
+						"depreciation_expense_account": company_defaults.depreciation_expense_account,
+						"capital_work_in_progress_account": company_defaults.capital_work_in_progress_account,
+					}
+				)
+
+			if not accounts:
+				errors.append(f"{category_name}: no companies available to build accounts for")
+			else:
+				doc = frappe.get_doc(
+					{
+						"doctype": "Asset Category",
+						"asset_category_name": category_name,
+						"accounts": accounts,
+					}
+				)
+				doc.insert(ignore_permissions=True)
+				created.append(doc.name)
+		except Exception as e:
+			frappe.clear_messages()
+			errors.append(f"{category_name}: {e}")
+
+		return {"created": created, "skipped": skipped, "errors": errors}
+
+	def ensure_root_item_group(self):
+		"""ERPNext's "All Item Groups" root is normally created by the interactive
+		Setup Wizard, not by app installation - so it may not exist on a fresh site
+		set up purely by script. Create it if missing (mirrors install_fixtures.py)."""
+		if frappe.db.exists("Item Group", "All Item Groups"):
+			return
+		frappe.get_doc(
+			{
+				"doctype": "Item Group",
+				"item_group_name": "All Item Groups",
+				"is_group": 1,
+				"parent_item_group": "",
+			}
+		).insert(ignore_permissions=True)
+
 	def import_item_groups(self, file_path):
 		created, skipped, errors = [], [], []
+		self.ensure_root_item_group()
 		self.item_group_lookup = {g.upper(): g for g in frappe.get_all("Item Group", pluck="name")}
 
 		headers, rows = _read_excel(file_path)
