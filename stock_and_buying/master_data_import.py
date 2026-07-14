@@ -185,9 +185,27 @@ class MasterDataImporter:
 
 		try:
 			accounts = []
-			for company_name, defaults in COMPANY_DEFAULTS.items():
+			for company_name in COMPANY_DEFAULTS:
 				if not frappe.db.exists("Company", company_name):
 					errors.append(f"{category_name}: company '{company_name}' not found, skipped for that company")
+					continue
+
+				# Prefer "Electronic Equipments" (fits IT hardware/software) if this
+				# company's Chart of Accounts has it; otherwise fall back to any
+				# "Fixed Asset" type account rather than assuming a fixed name - the
+				# Chart of Accounts template actually used may differ from "Standard".
+				abbr = frappe.get_cached_value("Company", company_name, "abbr")
+				preferred = f"Electronic Equipments - {abbr}"
+				if frappe.db.exists("Account", preferred):
+					fixed_asset_account = preferred
+				else:
+					fixed_asset_account = frappe.db.get_value(
+						"Account",
+						{"company": company_name, "account_type": "Fixed Asset", "is_group": 0},
+						"name",
+					)
+				if not fixed_asset_account:
+					errors.append(f"{category_name}: no 'Fixed Asset' type account found for company '{company_name}'")
 					continue
 
 				company_defaults = frappe.get_cached_value(
@@ -203,7 +221,7 @@ class MasterDataImporter:
 				accounts.append(
 					{
 						"company_name": company_name,
-						"fixed_asset_account": f"Electronic Equipments - {defaults['abbr']}",
+						"fixed_asset_account": fixed_asset_account,
 						"accumulated_depreciation_account": company_defaults.accumulated_depreciation_account,
 						"depreciation_expense_account": company_defaults.depreciation_expense_account,
 						"capital_work_in_progress_account": company_defaults.capital_work_in_progress_account,
@@ -281,9 +299,24 @@ class MasterDataImporter:
 
 		return {"created": created, "skipped": skipped, "errors": errors}
 
+	def _resolve_company(self, raw_company):
+		"""Resolve a company name from the Excel file. Matches either directly
+		against an existing Company's real name, or via the abbreviated
+		COMPANY_NAME_MAP - the source file has used both forms at different times."""
+		if not raw_company:
+			return None
+		key = raw_company.upper()
+		if key in self._company_lookup:
+			return self._company_lookup[key]
+		mapped = COMPANY_NAME_MAP.get(key)
+		if mapped and frappe.db.exists("Company", mapped):
+			return mapped
+		return None
+
 	def import_warehouses(self, file_path):
 		created, skipped, errors = [], [], []
 		group_cache = {}  # (company, name.upper()) -> resolved warehouse name
+		self._company_lookup = {c.upper(): c for c in frappe.get_all("Company", pluck="name")}
 
 		headers, rows = _read_excel(file_path)
 		for raw_row in rows:
@@ -293,8 +326,8 @@ class MasterDataImporter:
 				continue
 
 			raw_company = _clean(row.get("Company"))
-			company = COMPANY_NAME_MAP.get(raw_company.upper()) if raw_company else None
-			if not company or not frappe.db.exists("Company", company):
+			company = self._resolve_company(raw_company)
+			if not company:
 				errors.append(f"{leaf_name}: could not resolve company '{raw_company}'")
 				continue
 
